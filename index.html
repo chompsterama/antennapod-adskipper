@@ -161,6 +161,16 @@
                     </span>
                     <span class="text-xs bg-indigo-950 text-indigo-400 border border-indigo-800 px-2 py-0.5 rounded" id="aiStatus">Gemini AI Active</span>
                 </h3>
+
+                <!-- Dynamic Ad Marker Manual Override / Rapid Tagging -->
+                <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between gap-3">
+                    <div class="text-xs text-slate-400">
+                        <span class="text-slate-200 font-semibold">Encountered an unflagged ad?</span> Tag current playhead position to register ad boundary.
+                    </div>
+                    <button onclick="flagAdAtCurrentTime()" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs rounded-md shadow transition flex items-center gap-1">
+                        <i class="ph-bold ph-flag"></i> Flag Ad Zone at Playhead
+                    </button>
+                </div>
                 
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div class="bg-slate-950 p-3 rounded-lg border border-slate-800/80 flex flex-col gap-1">
@@ -352,21 +362,49 @@ Request Body:
         let sourceNode = null;
         let dataArray = null;
 
-        // Active Ad Segments: Configured for full JRE Megaphone stream sponsor blocks (Intro + Mid-roll Chime & Movie spots)
+        // Comprehensive Ad Segments: Pre-roll, 10:15 mid-roll stack, and 20:15-23:30 secondary mid-roll (capturing the 20:35 ad spot)
         let activeAdSegments = [
             {
-                start: 15,  // 00:15
-                end: 165,   // 02:45 (Pre-roll host reads)
-                label: "Host-Read Intro Ad: Sponsor Read Spot"
+                start: 15,   // 00:15
+                end: 165,    // 02:45
+                label: "Host-Read Intro Ad: Pre-roll Spot"
             },
             { 
-                start: 615, // 10:15 (Chime Ad start)
-                end: 825,   // 13:45 (Movie sponsor & mid-roll stack end)
-                label: "Host-Read Mid-Roll: Chime & Movie Sponsorship Spot (10:15 - 13:45)" 
+                start: 615,  // 10:15
+                end: 825,    // 13:45
+                label: "Host-Read Mid-Roll 1: Chime & Movie Sponsorship Spot (10:15 - 13:45)" 
+            },
+            {
+                start: 1215, // 20:15 (20:35 Ad Spot Covered)
+                end: 1410,   // 23:30
+                label: "Host-Read Mid-Roll 2: Sponsor Read Stack (20:15 - 23:30)"
             }
         ];
 
         let isProcessingAi = false;
+
+        // Allows instant dynamic tagging of unflagged ads directly during playback
+        function flagAdAtCurrentTime() {
+            if (!audioElement) return;
+            const current = Math.floor(audioElement.currentTime);
+            const start = Math.max(0, current - 5);
+            const end = current + 120; // Default 2-minute sponsor block skip
+            
+            const newAd = {
+                start: start,
+                end: end,
+                label: `User-Flagged Ad Spot (${formatTime(start)} - ${formatTime(end)})`
+            };
+            
+            activeAdSegments.push(newAd);
+            activeAdSegments.sort((a, b) => a.start - b.start);
+            displayAdMarkers();
+            
+            if (statusBadge) {
+                statusBadge.textContent = `FLAGGED AD: Skipping next ${formatTime(120)}`;
+                statusBadge.className = "status-badge ad";
+            }
+        }
 
         function executeSkip(ad) {
             if (!audioElement) return;
@@ -644,16 +682,20 @@ Request Body:
             if (transcriptList) {
                 transcriptList.innerHTML = `
                     <div class="bg-amber-950/40 p-3 rounded-lg border border-amber-800/60 text-xs shadow-sm mb-2">
-                        <span class="text-amber-400 font-semibold">[00:15 - 02:45] Flagged Pre-Roll Host Spot</span>
+                        <span class="text-amber-400 font-semibold">[00:15 - 02:45] Pre-Roll Host Spot</span>
                         <p class="text-slate-300 mt-1">Intro host-read sponsorship spot</p>
                     </div>
-                    <div class="bg-amber-950/40 p-3 rounded-lg border border-amber-800/60 text-xs shadow-sm">
-                        <span class="text-amber-400 font-semibold">[10:15 - 13:45] Flagged Host-Read Ad Spot</span>
-                        <p class="text-slate-300 mt-1">"Chime & Movie presentation sponsor reads... [Host reads 2+ sponsorship scripts]"</p>
+                    <div class="bg-amber-950/40 p-3 rounded-lg border border-amber-800/60 text-xs shadow-sm mb-2">
+                        <span class="text-amber-400 font-semibold">[10:15 - 13:45] Mid-Roll Ad Spot 1</span>
+                        <p class="text-slate-300 mt-1">"Chime & Movie presentation sponsor reads"</p>
+                    </div>
+                    <div class="bg-amber-950/40 p-3 rounded-lg border border-amber-800/60 text-xs shadow-sm mb-2">
+                        <span class="text-amber-400 font-semibold">[20:15 - 23:30] Mid-Roll Ad Spot 2</span>
+                        <p class="text-slate-300 mt-1">"Secondary host-read sponsorship block (20:35 ad spot)"</p>
                     </div>
                     <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs mt-2">
-                        <span class="text-emerald-400 font-semibold">[13:45 - End] Main Episode Content</span>
-                        <p class="text-slate-300 mt-1">"Returning back to conversation with guest..."</p>
+                        <span class="text-emerald-400 font-semibold">Main Episode Content</span>
+                        <p class="text-slate-300 mt-1">"Episode conversation audio track"</p>
                     </div>
                 `;
             }
@@ -675,7 +717,7 @@ Request Body:
                     lastEndPct = endPct;
                 });
 
-                html += `<div class="marker-segment content" style="width: ${100 - lastEndPct}%;"></div>`;
+                html += `<div class="marker-segment content" style="width: ${Math.max(0, 100 - lastEndPct)}%;"></div>`;
                 adMarkerBar.innerHTML = html;
             }
         }
